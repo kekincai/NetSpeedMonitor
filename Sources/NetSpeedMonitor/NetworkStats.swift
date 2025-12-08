@@ -45,9 +45,8 @@ class NetworkStats: ObservableObject {
             if addrFamily == UInt8(AF_LINK) {
                 let name = String(cString: (interface?.ifa_name)!)
 
-                // Filter for common active interfaces (en0, en1 typically wifi/ethernet)
-                // You might want to be more inclusive or exclusive depending on needs
-                if name.hasPrefix("en") {
+                // Filter out loopback, monitor all others (en, utun, etc)
+                if !name.hasPrefix("lo") {
                     let data = interface?.ifa_data.assumingMemoryBound(to: if_data.self)
                     totalBytesIn += UInt64(data?.pointee.ifi_ibytes ?? 0)
                     totalBytesOut += UInt64(data?.pointee.ifi_obytes ?? 0)
@@ -77,11 +76,11 @@ class NetworkStats: ObservableObject {
     private func formatBytes(_ bytes: UInt64) -> String {
         let b = Double(bytes)
         if b < 1024 {
-            return String(format: "%.0f B", b)
+            return String(format: "%3.0f B", b)
         } else if b < 1024 * 1024 {
-            return String(format: "%.1f KB", b / 1024)
+            return String(format: "%3.1f KB", b / 1024)
         } else {
-            return String(format: "%.1f MB", b / (1024 * 1024))
+            return String(format: "%3.1f MB", b / (1024 * 1024))
         }
     }
 }

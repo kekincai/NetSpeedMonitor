@@ -12,13 +12,21 @@ struct NetSpeedApp: App {
                 NSApplication.shared.terminate(nil)
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.down")
-                Text(stats.downloadSpeed)
-                Image(systemName: "arrow.up")
-                Text(stats.uploadSpeed)
+            VStack(alignment: .trailing, spacing: 0) {
+                HStack(spacing: 2) {
+                    Text(stats.downloadSpeed)
+                    Image(systemName: "arrow.down")
+                        .imageScale(.small)
+                }
+                HStack(spacing: 2) {
+                    Text(stats.uploadSpeed)
+                    Image(systemName: "arrow.up")
+                        .imageScale(.small)
+                }
             }
             .monospacedDigit()
+            .font(.system(size: 9))
+            .frame(width: 60, alignment: .trailing)
         }
     }
 }
