@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:NetSpeedMonitor}",
+            "name": "Debug NetSpeedMonitor",
+            "program": "${workspaceFolder:NetSpeedMonitor}/.build/debug/NetSpeedMonitor",
+            "preLaunchTask": "swift: Build Debug NetSpeedMonitor"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:NetSpeedMonitor}",
+            "name": "Release NetSpeedMonitor",
+            "program": "${workspaceFolder:NetSpeedMonitor}/.build/release/NetSpeedMonitor",
+            "preLaunchTask": "swift: Build Release NetSpeedMonitor"
+        }
+    ]
+}
