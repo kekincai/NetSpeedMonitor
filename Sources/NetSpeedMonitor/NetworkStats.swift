@@ -48,17 +48,15 @@ class NetworkStats: ObservableObject {
     private var totalBytesInMonth: UInt64 = 0
     private var totalBytesOutMonth: UInt64 = 0
     
+    // 进程流量追踪
+    private var processConnections: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    private var processUpdateTimer: Timer?
+    
     // 初始化方法，创建对象时自动调用
     init() {
-        // 初始化一些模拟数据
-        topProcesses = [
-            ProcessTraffic(name: "Safari", download: 0, upload: 0),
-            ProcessTraffic(name: "Chrome", download: 0, upload: 0),
-            ProcessTraffic(name: "Xcode", download: 0, upload: 0)
-        ]
-        
         startMonitoring()
         fetchNetworkInfo()
+        startProcessMonitoring()
     }
 
     // 开始监控网络速度
@@ -76,6 +74,8 @@ class NetworkStats: ObservableObject {
     func stopMonitoring() {
         timer?.invalidate()  // 使定时器失效
         timer = nil          // 释放定时器对象
+        processUpdateTimer?.invalidate()
+        processUpdateTimer = nil
     }
 
     // 更新网络速度的核心方法
@@ -283,6 +283,207 @@ class NetworkStats: ObservableObject {
                 self.networkHealth = "较差"
             }
         }
+    }
+    
+    // 开始监控进程流量
+    // 进程流量监控比较消耗资源，所以更新频率较低
+    private func startProcessMonitoring() {
+        // 每 3 秒更新一次进程流量信息
+        // withTimeInterval: 时间间隔（秒）
+        // repeats: true 表示重复执行
+        processUpdateTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.updateProcessTraffic()
+        }
+        // 立即执行一次，让用户尽快看到数据
+        updateProcessTraffic()
+    }
+    
+    // 更新进程流量信息
+    // 在后台线程执行，避免阻塞主线程
+    private func updateProcessTraffic() {
+        // DispatchQueue.global 在后台线程执行
+        // qos: .background 表示低优先级任务
+        DispatchQueue.global(qos: .background).async {
+            // 使用 nettop 命令获取进程网络使用情况
+            // nettop 是 macOS 自带的网络监控工具，可以显示每个进程的网络使用情况
+            let processes = self.getProcessNetworkUsage()
+            
+            // 在主线程更新 UI
+            DispatchQueue.main.async {
+                self.topProcesses = processes
+            }
+        }
+    }
+    
+    // 获取进程网络使用情况
+    // 使用 macOS 系统自带的 nettop 命令
+    private func getProcessNetworkUsage() -> [ProcessTraffic] {
+        // Process 类用于执行外部命令
+        let task = Process()
+        task.launchPath = "/usr/bin/nettop"
+        
+        // nettop 命令参数说明：
+        // -P: 按进程（Process）分组显示
+        // -L 1: 只采样 1 次（Loop 1 time）
+        // -J bytes_in,bytes_out: 只显示接收和发送的字节数（JSON 格式）
+        // -x: 不显示表头（exclude header）
+        task.arguments = ["-P", "-L", "1", "-J", "bytes_in,bytes_out", "-x"]
+        
+        // Pipe 用于捕获命令的输出
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()  // 忽略错误输出
+        
+        var result: [ProcessTraffic] = []
+        
+        do {
+            // 启动进程
+            try task.run()
+            
+            // 设置超时时间为 2 秒
+            // nettop 有时会卡住，需要设置超时
+            let timeoutDate = Date().addingTimeInterval(2.0)
+            while task.isRunning && Date() < timeoutDate {
+                usleep(100000)  // 等待 0.1 秒（100,000 微秒）
+            }
+            
+            // 如果超时，强制终止进程
+            if task.isRunning {
+                task.terminate()
+            }
+            
+            // 读取命令输出
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                // 解析 nettop 的输出
+                result = parseNettopOutput(output)
+            }
+        } catch {
+            // 如果 nettop 失败（可能是权限问题），使用备用方案
+            result = getProcessNetworkUsageFallback()
+        }
+        
+        return result
+    }
+    
+    // 解析 nettop 命令的输出
+    // nettop 输出格式：进程名.pid,bytes_in,bytes_out
+    private func parseNettopOutput(_ output: String) -> [ProcessTraffic] {
+        // 使用字典来累加同名进程的流量
+        // 键：进程名，值：(下载字节数, 上传字节数)
+        var processMap: [String: (download: UInt64, upload: UInt64)] = [:]
+        
+        // 按行分割输出
+        let lines = output.components(separatedBy: .newlines)
+        for line in lines {
+            // 跳过空行和表头
+            if line.isEmpty || line.contains("bytes_in") {
+                continue
+            }
+            
+            // nettop 输出格式：进程名.pid,bytes_in,bytes_out
+            // 例如：Safari.12345,1024000,512000
+            let components = line.components(separatedBy: ",")
+            if components.count >= 3 {
+                // 提取进程名（去掉 .pid 部分）
+                var processName = components[0].trimmingCharacters(in: .whitespaces)
+                // 查找最后一个点的位置
+                if let dotIndex = processName.lastIndex(of: ".") {
+                    // 截取点之前的部分作为进程名
+                    processName = String(processName[..<dotIndex])
+                }
+                
+                // 解析字节数
+                // ?? 0 表示如果转换失败则使用 0
+                let bytesIn = UInt64(components[1].trimmingCharacters(in: .whitespaces)) ?? 0
+                let bytesOut = UInt64(components[2].trimmingCharacters(in: .whitespaces)) ?? 0
+                
+                // 累加同名进程的流量
+                // 因为一个应用可能有多个进程（如 Chrome 的多个标签页）
+                if let existing = processMap[processName] {
+                    processMap[processName] = (
+                        download: existing.download + bytesIn,
+                        upload: existing.upload + bytesOut
+                    )
+                } else {
+                    processMap[processName] = (download: bytesIn, upload: bytesOut)
+                }
+            }
+        }
+        
+        // 转换为数组并排序（按总流量降序）
+        // map 将字典转换为 ProcessTraffic 数组
+        let processes = processMap.map { name, traffic in
+            ProcessTraffic(
+                name: name,
+                download: traffic.download,
+                upload: traffic.upload
+            )
+        }.sorted { ($0.download + $0.upload) > ($1.download + $1.upload) }
+        
+        // 只返回流量最大的前 5 个进程
+        return Array(processes.prefix(5))
+    }
+    
+    // 备用方案：使用 lsof 获取网络连接
+    // 当 nettop 不可用时使用此方法
+    // lsof 只能显示哪些进程有网络连接，但无法获取流量数据
+    private func getProcessNetworkUsageFallback() -> [ProcessTraffic] {
+        let task = Process()
+        task.launchPath = "/usr/sbin/lsof"
+        
+        // lsof 命令参数说明：
+        // -i: 显示所有网络连接（Internet connections）
+        // -n: 不解析主机名（加快速度，避免 DNS 查询）
+        // -P: 不解析端口名（显示数字端口而不是服务名）
+        task.arguments = ["-i", "-n", "-P"]
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        
+        // 统计每个进程的网络连接数
+        var processCount: [String: Int] = [:]
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                let lines = output.components(separatedBy: .newlines)
+                
+                for line in lines {
+                    // 跳过表头和空行
+                    if line.hasPrefix("COMMAND") || line.isEmpty {
+                        continue
+                    }
+                    
+                    // lsof 输出格式：
+                    // COMMAND    PID  USER   FD   TYPE  DEVICE  SIZE/OFF  NODE  NAME
+                    // Safari     123  user   10u  IPv4  0x1234  0t0       TCP   ...
+                    
+                    // 提取进程名（第一列）
+                    let components = line.components(separatedBy: .whitespaces)
+                    if let processName = components.first, !processName.isEmpty {
+                        // 统计每个进程的连接数
+                        // default: 0 表示如果键不存在，初始值为 0
+                        processCount[processName, default: 0] += 1
+                    }
+                }
+            }
+        } catch {
+            // 失败时返回空数组
+            return []
+        }
+        
+        // 按连接数排序，连接数多的进程可能流量也大
+        // sorted 按值（连接数）降序排序
+        let processes = processCount.sorted { $0.value > $1.value }
+            .prefix(5)  // 只取前 5 个
+            .map { ProcessTraffic(name: $0.key, download: 0, upload: 0) }
+        
+        return Array(processes)
     }
 
     // 将字节数格式化为易读的字符串

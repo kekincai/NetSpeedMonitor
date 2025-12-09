@@ -89,21 +89,40 @@ struct DetailedStatsView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                 
-                ForEach(stats.topProcesses, id: \.name) { process in
-                    HStack {
-                        Text(process.name)
-                            .frame(width: 120, alignment: .leading)
-                        Spacer()
-                        if process.download > 0 {
-                            Text("⬇ \(formatSpeed(process.download))")
-                                .monospacedDigit()
+                if stats.topProcesses.isEmpty {
+                    Text("正在检测...")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 8)
+                } else {
+                    ForEach(stats.topProcesses.prefix(3)) { process in
+                        HStack(spacing: 4) {
+                            // 进程名，固定宽度 85
+                            Text(process.name)
+                                .frame(width: 85, alignment: .leading)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            
+                            Spacer()
+                            
+                            // 下载速度，固定宽度 75
+                            HStack(spacing: 2) {
+                                Text("⬇")
+                                Text(formatSpeedFixed(process.download))
+                                    .monospacedDigit()
+                            }
+                            .frame(width: 75, alignment: .trailing)
+                            
+                            // 上传速度，固定宽度 75
+                            HStack(spacing: 2) {
+                                Text("⬆")
+                                Text(formatSpeedFixed(process.upload))
+                                    .monospacedDigit()
+                            }
+                            .frame(width: 75, alignment: .trailing)
                         }
-                        if process.upload > 0 {
-                            Text("⬆ \(formatSpeed(process.upload))")
-                                .monospacedDigit()
-                        }
+                        .font(.system(size: 11))
                     }
-                    .font(.system(size: 11))
                 }
             }
             
@@ -157,6 +176,29 @@ struct DetailedStatsView: View {
             return String(format: "%.1f KB/s", b / 1024)
         } else {
             return String(format: "%.1f MB/s", b / (1024 * 1024))
+        }
+    }
+    
+    // 格式化速度显示（固定宽度）
+    // 确保不同单位的速度显示宽度一致，数字右对齐
+    private func formatSpeedFixed(_ bytesPerSecond: UInt64) -> String {
+        let b = Double(bytesPerSecond)
+        if b < 1024 {
+            // B/s：数字部分 4 位，加上 " B/s" 共 8 字符
+            // 例如："   0 B/s"
+            return String(format: "%4.0f B/s", b)
+        } else if b < 1024 * 1024 {
+            // KB/s：数字部分 4 位（含小数点），加上 "KB/s" 共 9 字符
+            // 例如：" 1.2 KB/s"
+            return String(format: "%4.1f KB/s", b / 1024)
+        } else if b < 1024 * 1024 * 1024 {
+            // MB/s：数字部分 4 位（含小数点），加上 "MB/s" 共 9 字符
+            // 例如：" 5.3 MB/s"
+            return String(format: "%4.1f MB/s", b / (1024 * 1024))
+        } else {
+            // GB/s：数字部分 5 位（含小数点），加上 "GB/s" 共 10 字符
+            // 例如：" 1.23 GB/s"
+            return String(format: "%5.2f GB/s", b / (1024 * 1024 * 1024))
         }
     }
     
