@@ -19,8 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
-        if let button = statusItem?.button {
-            button.attributedTitle = NSAttributedString(string: "↓0 KB/s\n↑0 KB/s")
+        if statusItem?.button != nil {
+            // 初始化时就设置正确的格式
+            updateStatusBar(download: "   0.0 KB", upload: "   0.0 KB")
         }
         
         let menu = NSMenu()
@@ -42,10 +43,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .right
         paragraphStyle.lineSpacing = -2
+        paragraphStyle.paragraphSpacing = 0
+        paragraphStyle.lineHeightMultiple = 0.9
         
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: paragraphStyle,
+            .baselineOffset: -6
         ]
         
         button.attributedTitle = NSAttributedString(string: text, attributes: attributes)
