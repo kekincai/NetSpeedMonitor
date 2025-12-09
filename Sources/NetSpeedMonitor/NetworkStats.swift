@@ -4,6 +4,8 @@ import SystemConfiguration
 class NetworkStats: ObservableObject {
     @Published var uploadSpeed: String = "0 KB/s"
     @Published var downloadSpeed: String = "0 KB/s"
+    
+    var onUpdate: ((String, String) -> Void)?
 
     private var timer: Timer?
     private var previousBytesIn: UInt64 = 0
@@ -63,10 +65,11 @@ class NetworkStats: ObservableObject {
 
         let bytesInDelta = totalBytesIn >= previousBytesIn ? totalBytesIn - previousBytesIn : 0
         let bytesOutDelta = totalBytesOut >= previousBytesOut ? totalBytesOut - previousBytesOut : 0
-
+        
         DispatchQueue.main.async {
             self.downloadSpeed = self.formatBytes(bytesInDelta) + "/s"
             self.uploadSpeed = self.formatBytes(bytesOutDelta) + "/s"
+            self.onUpdate?(self.downloadSpeed, self.uploadSpeed)
         }
 
         previousBytesIn = totalBytesIn
@@ -76,11 +79,13 @@ class NetworkStats: ObservableObject {
     private func formatBytes(_ bytes: UInt64) -> String {
         let b = Double(bytes)
         if b < 1024 {
-            return String(format: "%3.0f B", b)
+            return String(format: "%6.0f B ", b)
         } else if b < 1024 * 1024 {
-            return String(format: "%3.1f KB", b / 1024)
+            return String(format: "%6.1f KB", b / 1024)
+        } else if b < 1024 * 1024 * 1024 {
+            return String(format: "%6.1f MB", b / (1024 * 1024))
         } else {
-            return String(format: "%3.1f MB", b / (1024 * 1024))
+            return String(format: "%6.2f GB", b / (1024 * 1024 * 1024))
         }
     }
 }
